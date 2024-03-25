@@ -1,6 +1,6 @@
 Sync email transaction notifications to [ActualBudget](https://actualbudget.org/).
 
-This is a very drafty script concept borrowing heavily from  [simplefin actual sync script](https://github.com/duplaja/actual-simplefin-sync) as well as [this script for parsing transactions emails into a spreadsheet](https://github.com/jrbromberg/bank-emails-to-spreadsheet/tree/add-bofa).
+This is a very drafty script concept borrowing heavily from  [simplefin actual sync script](https://github.com/duplaja/actual-simplefin-sync) as well as [this script for parsing transactions emails into a spreadsheet](https://github.com/jrbromberg/bank-emails-to-spreadsheet/tree/add-bofa), with some support from chatGPT. 
 
 
 
