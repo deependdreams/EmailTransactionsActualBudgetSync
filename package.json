@@ -15,11 +15,8 @@
     "fs-extra": "^11.2.0",
     "html-to-text": "^9.0.5",
     "imapflow": "^1.0.158",
-    "inquirer": "^8.2.0",
-    "mailparser": "^3.6.9",
     "nconf": "^0.12.1",
     "ora": "^8.0.1",
-    "pretty-json": "^0.1.1",
     "prettyjson": "^1.2.5"
   },
   "devDependencies": {
