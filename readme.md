@@ -33,7 +33,7 @@ This is a very drafty script concept borrowing heavily from  [simplefin actual s
  - figure out how to make the notes work? 
  - fix json parsing/storage 
  - validation of expressions and info in the set up process?
- - dynamic determination of email bodystructure to target the right one for the plaintext.
+ - dynamic determination of email bodystructure to target the right one for the plaintext. Right now it always parses the first part of the body, with some code to determine whether it's plain or plain/html and the encoding.
  - make the imap interaction display return prettier?
  
 ## USAGE
