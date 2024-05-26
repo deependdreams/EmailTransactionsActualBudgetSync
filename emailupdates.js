@@ -42,28 +42,41 @@ async function fetchAndParseEmails() {
             throw new Error('Mailbox not found or empty');
         }
 
-        const messageUids = await client.search({seen: false});
-        console.log({ uidCount: messageUids.length }, 'Fetching unseen emails');
-        const fetchOptions = { bodyStructure: true, internalDate: true, envelope: true, bodyParts: ['1'], markSeen: false};
+        const messageCount = await client.search({seen: false});
+        const messageUids = [];
+        if (messageCount.length === 0) {
+            console.log('No unseen messages to process.');
+            return messages; // Exit if no new messages
+        }
+        console.log(`Fetching unseen emails... Total: ${messageUids.length}`);
+        const fetchOptions = { bodyStructure: true, internalDate: true, envelope: true, bodyParts: ['1'], markSeen: false, uid: true};
 
         console.log('Preparing to fetch unseen emails...');
-        
+        for await (let msg of client.fetch('1:*', {uid: true})){
+            console.log(msg.uid);
+            messageUids.push(msg.uid);
+            
+        }
+       const messageMove = [];
         for (const uid of messageUids) {
             consola.debug('Attempting to fetch this email UID ', { uid });
             try {
-                const message = await client.fetchOne(uid, fetchOptions);
+                const message = await client.fetchOne(uid, fetchOptions, {uid: true});
                 if (message) {
                     const transaction = parseEmailToTransaction(message, accountMappings);
                     consola.debug({ transaction }, 'Constructed transaction object');
                     if (transaction) {
                         console.log(`${transaction.amount} from ${transaction.payee_name}, adding to transactions array for account, ${transaction.account}`);
                         messages.push(transaction);
-                        await client.messageMove(uid, 'TransactionAdded' ); //change after testing
+                        messageMove.push(uid);
+                        //change after testing
                     } else {
                         console.warn({ uid }, 'No transaction message found for UID');
+                        messageMove.push(uid);
                     }
                 } else {
                     console.warn({ uid }, 'No message found for UID');
+                    
                 }
             } catch (error) {
                 console.error({ uid }, 'Error fetching email UID:', error);
@@ -71,6 +84,9 @@ async function fetchAndParseEmails() {
         }
 
         console.log(`Fetched ${messages.length} messages`);
+
+         let move = await client.messageMove(messageMove, 'TransactionAdded', {uid: true} );
+        console.log(`Moved ${move.uidMap.size} messages`);
     } catch (error) {
         
         console.error('Error fetching or parsing emails:', error);
@@ -114,7 +130,13 @@ function parseEmailToTransaction(email, accountMappings) {
     let isNotClear = new RegExp(accountMapping.pendingRegex)?.test(email.envelope.subject);
     let merchantRegex = new RegExp(accountMapping.merchantRegex);
     let merchantMatch = emailText.match(merchantRegex);
-    let merchant = merchantMatch[0];
+    let merchant = "";
+    if (merchantMatch){
+    merchant = merchantMatch[0];}
+    else{ 
+        merchant = accountMapping.accountName
+
+    }
     let amountRegex = new RegExp(accountMapping.AmountRegex);
     let amountMatch = emailText.match(amountRegex);
     let strAmount = amountMatch[0].replace('$','');
