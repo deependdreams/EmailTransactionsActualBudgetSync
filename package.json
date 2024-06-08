@@ -18,8 +18,5 @@
     "nconf": "^0.12.1",
     "ora": "^8.0.1",
     "prettyjson": "^1.2.5"
-  },
-  "devDependencies": {
-    "eslint": "^8.57.0"
   }
 }
