@@ -2,16 +2,80 @@
 const { ImapFlow } = require('imapflow');
 const nconf = require('nconf'); 
 const { htmlToText } = require('html-to-text');
-const {consola, CreateConsola} = require('consola');
-
+const {consola, createConsola} = require('consola');
+const Table = require('cli-table3');
+const block = require('cli-block');
+var colors = require('colors/safe');
 
 nconf.file({ file: './config.json' });
-consola.wrapConsole();
 
 let emailAddress = nconf.get('emailAddress');
 let emailPassword = nconf.get('emailPassword');
 console.log(`Email Address: ${emailAddress}, Email Password: ${emailPassword ? 'hidden' : 'undefined or empty'}`);
+function displayMailboxes(mailboxes) {
+    block.start('IMAP Log');
+    block.blockHeader('Available Mailboxes @ ' + new Date().toLocaleTimeString());
+    const formattedMailboxes = mailboxes.map(mb => mb.path);
+    // Calculate the length of each column by dividing total items by 3
+    const third = Math.ceil(formattedMailboxes.length / 3);
+    const firstColumn = formattedMailboxes.slice(0, third);
+    const secondColumn = formattedMailboxes.slice(third, 2 * third);
+    const thirdColumn = formattedMailboxes.slice(2 * third);
 
+   // Create a new table with three columns
+   const table = new Table({
+    style: { border: [], header: [] },
+    colWidths: [15, 15, 15], // Adjust column widths if necessary
+    wordWrap: true,
+});
+
+// Fill the table with mailbox names, ensuring all columns align by row count
+for (let i = 0; i < third; i++) {
+    table.push([
+        firstColumn[i] || '',
+        secondColumn[i] || '',
+        thirdColumn[i] || ''
+    ]);
+}
+    block.blockLine(console.log(table.toString()));
+    block.blockFooter();
+}
+
+function displayMailboxDetails(mailbox) {
+    block.start("mailbox connection");
+    block.blockHeader('Selected Mailbox: ' + mailbox.path);
+    const table = new Table({
+        head: ['Property', 'Value'],
+        colWidths: [20, 60], wordWrap: true,
+    });
+
+    // Add rows for each property
+    table.push(
+        ['Exists', mailbox.exists],
+        ['UID Validity', mailbox.uidValidity.toString()],
+        ['UID Next', mailbox.uidNext.toString()],
+        ['Unseen', mailbox.unseen || '0'],
+        ['Highest ModSeq', mailbox.highestModseq.toString()],
+        ['Read Only', mailbox.readOnly],
+        ['Flags', Array.from(mailbox.flags).join(', ')],
+        ['Permanent Flags', Array.from(mailbox.permanentFlags).join(', ')]
+    );
+
+    block.blockLine(console.log(table.toString()));
+    block.blockFooter();
+}
+  
+  const imapConsola = createConsola({
+    
+    //level: 4,
+    fancy: true,
+  formatOptions: {
+  columns: 80,
+    colors: true,
+    compact: true,
+  //     date: false,
+ },
+});
 let fastmailConfig = {
     auth: {
         user: emailAddress,
@@ -20,27 +84,36 @@ let fastmailConfig = {
     host: 'imap.fastmail.com',
     port: 993,
     secure: true,
+    logger: imapConsola
 };
 
 let accountMappings = nconf.get('accountDetails');
 
 async function fetchAndParseEmails() {
+    
     const client = new ImapFlow(fastmailConfig);
     let messages = [];
 
     try {
         await client.connect();
-        console.log('Connected to IMAP server.');
+        imapConsola.info('Connected to IMAP server.');
 
         let mailboxes = await client.list();
-        console.log('Available mailboxes:', mailboxes.map(mb => mb.path));
-
+       displayMailboxes(mailboxes);
+//formattinghere
         let mailboxOpenResult = await client.mailboxOpen('BankTransactionUpdate');
-        console.log('Selected mailbox details:', mailboxOpenResult);
-
+        displayMailboxDetails(mailboxOpenResult);
+//formattinghere
         if (!mailboxOpenResult || mailboxOpenResult.exists === 0) {
             throw new Error('Mailbox not found or empty');
         }
+        const messageTable = new Table({
+            head: ['UID', 'Date', 'Subject', 'Matched', 'Moved', 'Amount', 'Payee', colors.cyan('Account')],
+            style: { 'padding-left': 0, 'padding-right': 0 },
+            colWidths: [null, null, 45, null,null, null, 25, 25],
+            wordWrap: true,
+            wrapOnWordBoundary: false
+        });
 
         const messageCount = await client.search({seen: false});
         const messageUids = [];
@@ -50,6 +123,7 @@ async function fetchAndParseEmails() {
         }
         console.log(`Fetching unseen emails... Total: ${messageUids.length}`);
         const fetchOptions = { bodyStructure: true, internalDate: true, envelope: true, bodyParts: ['1'], markSeen: false, uid: true};
+       
 
         console.log('Preparing to fetch unseen emails...');
         for await (let msg of client.fetch('1:*', {uid: true})){
@@ -64,27 +138,36 @@ async function fetchAndParseEmails() {
                 const message = await client.fetchOne(uid, fetchOptions, {uid: true});
                 if (message) {
                     const transaction = parseEmailToTransaction(message, accountMappings);
-                    consola.debug({ transaction }, 'Constructed transaction object');
+                    
                     if (transaction) {
-                        console.log(`${transaction.amount} from ${transaction.payee_name}, adding to transactions array for account, ${transaction.account}`);
                         messages.push(transaction);
                         messageMove.push(uid);
-                        //change after testing
+                        messageTable.push([
+                            uid || '-', 
+                            new Date(message.internalDate).toLocaleString() || '-' ,
+                             message.envelope.subject || '-', 'yes', 'yes', (transaction.amount*.01).toFixed(2)|| '-', transaction.payee_name, message.envelope.from[0].address || '-'
+                        ]);
                     } else {
-                        console.warn({ uid }, 'No transaction message found for UID');
+                        messageTable.push([
+                            uid || '-', new Date(message.internalDate).toLocaleString(), message.envelope.subject, 'no', 'yes', '-',  '-',  '-',  message.envelope.from[0].address
+                        ]);
                         messageMove.push(uid);
                     }
                 } else {
-                    console.warn({ uid }, 'No message found for UID');
+                    
+                    messageTable.push([
+                        uid, '-','-', 'no', 'no', '-',  '-',  '-',  '-'
+                    ]);
                     
                 }
             } catch (error) {
                 console.error({ uid }, 'Error fetching email UID:', error);
             }
         }
-
-        console.log(`Fetched ${messages.length} messages`);
-
+        block.start('Email Log');
+        block.blockHeader(messages.length + ' messages');
+        console.log(messageTable.toString());
+        block.blockFooter();
          let move = await client.messageMove(messageMove, 'TransactionAdded', {uid: true} );
         console.log(`Moved ${move.uidMap.size} messages`);
     } catch (error) {
@@ -93,7 +176,9 @@ async function fetchAndParseEmails() {
     } finally {
         await client.logout();
     }
+    
     return messages;
+
    
 }
 
@@ -101,7 +186,7 @@ async function fetchAndParseEmails() {
 
 function parseEmailToTransaction(email, accountMappings) {
     // Determine the corresponding account using the sender email
-    consola.debug({email}, 'Parsing email to transaction');
+    
     let accountMapping = accountMappings.find(mapping => email.envelope.from[0].address === mapping.SenderEmails);
     if (!accountMapping) return null;
     let charSet = getFirstPartCharset(email.bodyStructure);
@@ -123,7 +208,7 @@ function parseEmailToTransaction(email, accountMappings) {
         return null;
     }
 
-    consola.debug({emailText}, 'Parsed email text');
+   
 
     // Apply regex parsing rules from accountMapping to extract transaction details
     let isOutflow = new RegExp(accountMapping.transactionRegex).test(email.envelope.subject);

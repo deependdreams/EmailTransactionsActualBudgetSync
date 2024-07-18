@@ -2,6 +2,16 @@
 const emailUpdates = require('./emailupdates');
 const api = require('@actual-app/api');
 const actualInjected = require('@actual-app/api/dist/injected');
+const Table = require('cli-table3');
+const block = require('cli-block');
+var colors = require('colors/safe');
+const { createConsola } = require("consola");
+const consola = createConsola({
+   level: 3,
+  fancy: true 
+});
+consola.wrapConsole();
+
 
 
 
@@ -23,19 +33,26 @@ async function sync(allTransactions) {
     console.error('Error preparing budgets directory:', e.message);
     throw e; // Re-throwing the error is important only if you want the script to stop execution here
   }
+  // Function to validate transactions
+ function isValidTransaction(transaction) {
+  return transaction.trans && transaction.subtransactions === null && transaction.match === null && transaction.fuzzyDataset.length === 0;
+}
+
   // Group transactions by accountId
 const transactionsByAccountId = allTransactions.reduce((acc, transaction) => {
   
   // Check if the accountId key already exists, if not initialize it
-  if (!acc[transaction.account]) {
-    acc[transaction.account] = [];
-    currentAccounts.push(transaction.account);
+  if (transaction.amount) {
+    if (!acc[transaction.account]) {
+      acc[transaction.account] = [];
+      currentAccounts.push(transaction.account);
+    }
+    // Push the transaction into the correct accountId bucket
+    acc[transaction.account].push(transaction);
+  } else {
+    console.warn(`Invalid transaction skipped: ${transaction.id}`);
   }
-
-  // Push the transaction into the correct accountId bucket
-  acc[transaction.account].push(transaction);
-  return acc;
-}, {});
+  return acc;}, {});
 
   await api.init({
     dataDir: budgetsPath,
@@ -54,9 +71,13 @@ const transactionsByAccountId = allTransactions.reduce((acc, transaction) => {
   
   const allAccounts = await api.getAccounts();
   
-  console.log('_____________________________________________________')
-  console.log('|          Account          |   Added   |  Updated  |')
-  console.log('+---------------------------+-----------+-----------+')
+  
+  const transTable = new Table({
+    head: [colors.magenta('Account'), 'Added', 'Updated'],
+    colWidths:[60, null, null],
+    wordWrap: true,
+    wrapOnWordBoundary: false
+});
   for (const accountId of currentAccounts) {
     
     try { 
@@ -68,8 +89,7 @@ const transactionsByAccountId = allTransactions.reduce((acc, transaction) => {
       const accountName = account.name;
 
       const importedTransactions = await api.importTransactions(accountId, transactionsByAccountId[accountId]);
-      console.log(`| ${accountName.padEnd(25)} | ${importedTransactions.added.length.toString().padStart(9)} | ${importedTransactions.updated.length.toString().padStart(9)} |`);
-
+transTable.push([colors.cyan(accountName),importedTransactions.added.length ,importedTransactions.updated.length]);
       const readline = require('readline').createInterface({
         input: process.stdin,
         output: process.stdout
@@ -103,8 +123,8 @@ const transactionsByAccountId = allTransactions.reduce((acc, transaction) => {
       throw ex;
     }
   }
-
   console.log('Re-downloading budget to force sync.');
+  console.log(transTable.toString());
   try {
     await api.downloadBudget(_budgetId, {password: _budgetEncryption});
   } catch (e) {
